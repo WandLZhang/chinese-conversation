@@ -81,7 +81,7 @@ def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str
        - Appropriate particles and measure words
     
     3. Vocabulary/Expression Usage:
-       {"For this Cantonese answer, since the vocabulary word is not commonly used in Cantonese, evaluate whether the answer expresses the same meaning naturally using appropriate Cantonese expressions. The meaningful_usage should be true if the meaning is expressed well, even without using the exact vocabulary word." if requires_alternative else f"Evaluate whether the vocabulary word '{vocab_word}' is used properly and meaningfully in the answer."}
+       {"For this Cantonese answer, examine how the question adapts the vocabulary word '{vocab_word}' into natural Cantonese. Your improved answer MUST use the same Cantonese word that the question uses, demonstrating its proper and meaningful usage in an authentic context." if requires_alternative else f"Evaluate whether the vocabulary word '{vocab_word}' is used properly and meaningfully in the answer."}
        Consider:
        - Context appropriateness
        - Natural expression
@@ -104,7 +104,7 @@ def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str
       "meaningful_usage": boolean, // true if meaning is expressed well (for Cantonese alternatives) or word is used properly
       "has_fillers": boolean,     // true if English words or unnecessary romanization used
       "romanization": string,     // pinyin for Mandarin or jyutping for Cantonese, with tones
-      "improved_answer": string,  // better version if needed (for Cantonese without word: only suggest if current expression is unnatural)
+      "improved_answer": string,  // better version that MUST use the vocabulary word (or for Cantonese: the same word used in the question)
       "feedback": string         // detailed explanation of evaluation and suggestions
     }}
 
@@ -335,9 +335,6 @@ def update_review_time(request):
             return (jsonify({'error': 'Missing required fields'}), 400, headers)
         
         # Parse the ISO string and preserve exact time
-        # Remove 'Z' from the end if present (Python's fromisoformat doesn't handle it)
-        if new_review_time.endswith('Z'):
-            new_review_time = new_review_time[:-1]
         review_time = datetime.fromisoformat(new_review_time)
         
         # Update the document with the exact time
