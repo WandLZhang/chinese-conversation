@@ -47,6 +47,36 @@ def check_cantonese_usage(vocab_word: str, cantonese_entry: str) -> bool:
     traditional_word = converter.convert(vocab_word)
     return traditional_word in cantonese_entry
 
+def extract_cantonese_word(question: str, vocab_word: str) -> str:
+    """Extract the Cantonese word/analogue used in the generated question"""
+    try:
+        # Use Claude to identify the Cantonese word used in the question
+        system_prompt = f"""You are a Cantonese language expert. Given a vocabulary word and a generated question,
+        identify the Cantonese word or expression used in the question that corresponds to the meaning of the vocabulary word.
+        Return ONLY the identified Cantonese characters, nothing else."""
+        
+        response = client.messages.create(
+            model="claude-3-5-sonnet-v2@20241022",
+            max_tokens=100,
+            temperature=0,
+            messages=[{
+                "role": "user",
+                "content": f"""Vocabulary word: {vocab_word}
+                Generated question: {question}
+                
+                What Cantonese word/expression in this question corresponds to the meaning of '{vocab_word}'?
+                Return ONLY the Cantonese characters."""
+            }],
+            system=system_prompt
+        )
+        
+        cantonese_word = response.content[0].text.strip()
+        print(f"Extracted Cantonese word: {cantonese_word}")
+        return cantonese_word
+    except Exception as e:
+        print(f"Error extracting Cantonese word: {str(e)}")
+        return vocab_word  # Fallback to original word if extraction fails
+
 def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str, vocab_entry: dict, generated_question: str = None) -> dict:
     """Use Claude to evaluate the answer and provide feedback"""
     
@@ -57,11 +87,17 @@ def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str
     
     # Check if word appears in Cantonese entry
     requires_alternative = False
+    target_word = vocab_word
     if language == 'cantonese':
         cantonese_entry = vocab_entry.get('cantonese', '')
         requires_alternative = not check_cantonese_usage(vocab_word, cantonese_entry)
         print(f"Cantonese Entry: {cantonese_entry}")
         print(f"Requires Alternative: {requires_alternative}")
+        
+        # If alternative is required and we have a generated question, extract the Cantonese word used
+        if requires_alternative and generated_question:
+            target_word = extract_cantonese_word(generated_question, vocab_word)
+            print(f"Using Cantonese alternative: {target_word}")
     
     # Use generated question if provided, otherwise fall back to entry
     question = generated_question if generated_question else vocab_entry.get(language.lower(), '')
@@ -81,7 +117,8 @@ def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str
        - Appropriate particles and measure words
     
     3. Vocabulary/Expression Usage:
-       {"For this Cantonese answer, examine how the question adapts the vocabulary word '{vocab_word}' into natural Cantonese. Your improved answer MUST use the same Cantonese word that the question uses, demonstrating its proper and meaningful usage in an authentic context." if requires_alternative else f"Evaluate whether the vocabulary word '{vocab_word}' is used properly and meaningfully in the answer."}
+       CRITICAL: Your improved answer MUST use the word '{target_word}' - this is non-negotiable.
+       {"This is the Cantonese word used in the question that corresponds to the meaning of '{vocab_word}'. Use it naturally and meaningfully." if requires_alternative else f"Evaluate whether the vocabulary word '{vocab_word}' is used properly and meaningfully in the answer."}
        Consider:
        - Context appropriateness
        - Natural expression
