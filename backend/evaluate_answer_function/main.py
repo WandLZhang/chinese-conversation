@@ -269,7 +269,7 @@ def evaluate_answer(request):
         )
         
         # Calculate next review time
-        now = datetime.utcnow()
+        now = datetime.utcnow().replace(tzinfo=None)
         print("\n=== Calculating Next Review ===")
         next_review = calculate_next_review(
             vocab_data,
@@ -280,17 +280,24 @@ def evaluate_answer(request):
         )
         print(f"Next Review Time: {next_review.isoformat()}")
         
-        # Update the document
+        # Update the document with UTC time
         next_review_field = f'nextReview{language.capitalize()}'
         doc_ref.update({
-            next_review_field: next_review
+            next_review_field: next_review.replace(tzinfo=None)
         })
         
-        # Prepare response
+        # Convert datetime to Timestamp
+        timestamp = Timestamp()
+        timestamp.FromDatetime(next_review)
+        
+        # Prepare response with raw timestamp data
         response = {
             'success': True,
             'evaluation': evaluation,
-            'nextReview': next_review.isoformat(),
+            'nextReview': {
+                'seconds': timestamp.seconds,
+                'nanoseconds': timestamp.nanos
+            },
             'intervals': INTERVALS  # Include available intervals for frontend dropdown
         }
         
@@ -327,14 +334,34 @@ def update_review_time(request):
         if not all([doc_id, language, new_review_time]):
             return (jsonify({'error': 'Missing required fields'}), 400, headers)
         
-        # Update the document
+        # Parse the ISO string and preserve exact time
+        # Remove 'Z' from the end if present (Python's fromisoformat doesn't handle it)
+        if new_review_time.endswith('Z'):
+            new_review_time = new_review_time[:-1]
+        review_time = datetime.fromisoformat(new_review_time)
+        
+        # Update the document with the exact time
         doc_ref = db.collection('vocabulary').document(doc_id)
         next_review_field = f'nextReview{language.capitalize()}'
         doc_ref.update({
-            next_review_field: datetime.fromisoformat(new_review_time)
+            next_review_field: review_time
         })
+
+        # Convert datetime to Timestamp for response
+        timestamp = Timestamp()
+        timestamp.FromDatetime(review_time)
+        print(f"\n=== Time Values ===")
+        print(f"Input ISO string: {new_review_time}")
+        print(f"Parsed datetime: {review_time}")
+        print(f"Timestamp: seconds={timestamp.seconds}, nanos={timestamp.nanos}")
         
-        return (jsonify({'success': True}), 200, headers)
+        return (jsonify({
+            'success': True,
+            'nextReview': {
+                'seconds': timestamp.seconds,
+                'nanoseconds': timestamp.nanos
+            }
+        }), 200, headers)
 
     except Exception as e:
         print(f'Error updating review time: {str(e)}')

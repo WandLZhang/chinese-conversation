@@ -20,27 +20,44 @@ function EvaluationResult({
   onUpdateTime 
 }: { 
   evaluation: AnswerEvaluation; 
-  nextReview: string;
-  onUpdateTime: (newTime: string) => void;
+  nextReview: { toDate: () => Date };
+  onUpdateTime: (newTime: { toDate: () => Date }) => void;
 }) {
-  // Times from Firestore are already in Eastern Time
-  const reviewDate = new Date(nextReview);
   const [selectedTime, setSelectedTime] = useState(nextReview);
 
-  // Format for datetime-local input
-  const inputValue = reviewDate.toISOString().slice(0, 16);
+  // Initialize selectedTime from nextReview
+  useEffect(() => {
+    setSelectedTime(nextReview);
+  }, [nextReview]);
+
+  // Format datetime-local input value from selectedTime
+  const date = selectedTime.toDate();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const inputValue = `${year}-${month}-${day}T${hours}:${minutes}`;
+  console.log('Input value:', inputValue);
 
   // Handle time change
   const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = new Date(e.target.value);
-    setSelectedTime(newDate.toISOString());
+    console.log('3. New input value:', e.target.value);
+    const date = new Date(e.target.value);
+    console.log('4. Date from input:', date.toString());
+    
+    // Convert to Timestamp (preserving exact time user selected)
+    const timestamp = Timestamp.fromDate(date);
+    console.log('5. New Timestamp:', timestamp);
+    setSelectedTime(timestamp);
   };
 
-  // Format display time (already in Eastern Time)
-  const displayTime = reviewDate.toLocaleString('en-US', {
+  // Format display time from nextReview (not selectedTime)
+  const displayTime = nextReview.toDate().toLocaleString('en-US', {
     dateStyle: 'medium',
     timeStyle: 'short'
   });
+  console.log('Display time:', displayTime);
 
   return (
     <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -93,7 +110,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [evaluation, setEvaluation] = useState<AnswerEvaluation | null>(null);
-  const [nextReview, setNextReview] = useState<string | null>(null);
+  const [nextReview, setNextReview] = useState<{ toDate: () => Date } | null>(null);
   const [showWordList, setShowWordList] = useState(false);
   const [scheduledWords, setScheduledWords] = useState<VocabEntry[]>([]);
   const [newWords, setNewWords] = useState<VocabEntry[]>([]);
@@ -364,8 +381,14 @@ function App() {
         currentQuestion.question
       );
       
+      // Convert raw timestamp data to Firestore Timestamp
+      const timestamp = new Timestamp(result.nextReview.seconds, result.nextReview.nanoseconds);
+      console.log('Raw timestamp data:', result.nextReview);
+      console.log('Converted to Firestore Timestamp:', timestamp);
+      console.log('Local time:', timestamp.toDate().toLocaleString());
+      
       setEvaluation(result.evaluation);
-      setNextReview(result.nextReview);
+      setNextReview(timestamp);
       setMessage(result.evaluation.feedback);
 
     } catch (error) {
@@ -376,13 +399,24 @@ function App() {
     }
   };
 
-  const handleUpdateTime = async (newTime: string) => {
+  const handleUpdateTime = async (newTime: { toDate: () => Date }) => {
     if (!currentVocab) return;
     
     setIsLoading(true);
     try {
-      await updateReviewTime(currentVocab.id, language, newTime);
-      setNextReview(newTime);
+      // Convert to ISO string without milliseconds
+      const date = newTime.toDate();
+      const isoString = date.toISOString().split('.')[0];
+      console.log('Update time - ISO string to backend:', isoString);
+      const result = await updateReviewTime(currentVocab.id, language, isoString);
+      
+      // Convert raw timestamp data to Firestore Timestamp
+      const timestamp = new Timestamp(result.nextReview.seconds, result.nextReview.nanoseconds);
+      console.log('Update time - Raw timestamp data:', result.nextReview);
+      console.log('Update time - Converted to Firestore Timestamp:', timestamp);
+      console.log('Update time - Local time:', timestamp.toDate().toLocaleString());
+      
+      setNextReview(timestamp);
       setMessage('Review time updated successfully');
     } catch (error) {
       console.error('Error updating review time:', error);

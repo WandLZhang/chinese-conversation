@@ -15,7 +15,7 @@ export interface AnswerEvaluation {
 export interface EvaluationResponse {
   success: boolean;
   evaluation: AnswerEvaluation;
-  nextReview: string;
+  nextReview: { seconds: number; nanoseconds: number };  // Firestore Timestamp
   intervals: {
     DIFFICULTY: {
       IMMEDIATE: number;
@@ -35,7 +35,7 @@ export async function evaluateAnswer(
   answer: string,
   hadDifficulty: boolean = false,
   generatedQuestion?: string
-): Promise<{ evaluation: AnswerEvaluation; nextReview: string }> {
+): Promise<{ evaluation: AnswerEvaluation; nextReview: { seconds: number; nanoseconds: number } }> {
   const response = await fetch(EVALUATE_URL, {
     method: 'POST',
     headers: {
@@ -62,7 +62,7 @@ export async function updateReviewTime(
   docId: string,
   language: Language,
   newReviewTime: string
-): Promise<void> {
+): Promise<{ nextReview: { seconds: number; nanoseconds: number } }> {
   const response = await fetch(UPDATE_TIME_URL, {
     method: 'POST',
     headers: {
@@ -79,4 +79,6 @@ export async function updateReviewTime(
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error(`Failed to update review time: ${error.error || response.statusText}`);
   }
+
+  return response.json();
 }
