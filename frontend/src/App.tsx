@@ -3,7 +3,7 @@ import { collection, query, orderBy, limit, getDocs, Timestamp, where } from 'fi
 import { User } from 'firebase/auth';
 import { db } from './services/firebase';
 import { signIn, onAuthChange } from './services/auth';
-import { evaluateAnswer, updateReviewTime, type AnswerEvaluation } from './services/scheduler';
+import { evaluateAnswer, updateReviewTime, markWordMastered, type AnswerEvaluation } from './services/scheduler';
 import { generateQuestion, playAudio } from './services/questions';
 import { VocabEntry, Language, QuestionData } from './types';
 import { SpeakerWaveIcon } from '@heroicons/react/24/solid';
@@ -17,11 +17,11 @@ function LoadingSpinner() {
 function EvaluationResult({ 
   evaluation, 
   nextReview, 
-  onUpdateTime 
+  onTimeChange 
 }: { 
   evaluation: AnswerEvaluation; 
   nextReview: { toDate: () => Date };
-  onUpdateTime: (newTime: { toDate: () => Date }) => void;
+  onTimeChange: (newTime: { toDate: () => Date }) => void;
 }) {
   const [selectedTime, setSelectedTime] = useState(nextReview);
 
@@ -50,6 +50,7 @@ function EvaluationResult({
     const timestamp = Timestamp.fromDate(date);
     console.log('5. New Timestamp:', timestamp);
     setSelectedTime(timestamp);
+    onTimeChange(timestamp);
   };
 
   // Format display time from nextReview (not selectedTime)
@@ -73,28 +74,19 @@ function EvaluationResult({
         <p className="text-sm text-gray-600">{evaluation.feedback}</p>
       </div>
       
-      <div className="flex items-center gap-4">
-        <div className="flex-grow">
-          <label className="block text-sm text-gray-600 mb-1">Next Review</label>
-          <div>
-            <div className="text-sm text-gray-600 mb-1">
-              {displayTime}
-            </div>
-            <input
-              type="datetime-local"
-              value={inputValue}
-              onChange={handleTimeChange}
-              className="border rounded px-2 py-1 w-full"
-            />
+      <div>
+        <label className="block text-sm text-gray-600 mb-1">Next Review</label>
+        <div>
+          <div className="text-sm text-gray-600 mb-1">
+            {displayTime}
           </div>
+          <input
+            type="datetime-local"
+            value={inputValue}
+            onChange={handleTimeChange}
+            className="border rounded px-2 py-1 w-full"
+          />
         </div>
-        <button
-          onClick={() => onUpdateTime(selectedTime)}
-          disabled={selectedTime === nextReview}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-        >
-          Update
-        </button>
       </div>
     </div>
   );
@@ -111,74 +103,109 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [evaluation, setEvaluation] = useState<AnswerEvaluation | null>(null);
   const [nextReview, setNextReview] = useState<{ toDate: () => Date } | null>(null);
+  const [selectedReviewTime, setSelectedReviewTime] = useState<{ toDate: () => Date } | null>(null);
   const [showWordList, setShowWordList] = useState(false);
   const [scheduledWords, setScheduledWords] = useState<VocabEntry[]>([]);
   const [newWords, setNewWords] = useState<VocabEntry[]>([]);
+  const [masteredWords, setMasteredWords] = useState<VocabEntry[]>([]);
 
   // Fetch word lists when language changes or modal opens
   useEffect(() => {
     if (showWordList && user) {
-      const fetchWordLists = async () => {
-        setIsLoading(true);
-        const vocabRef = collection(db, 'vocabulary');
-        const nextReviewField = `nextReview${language.charAt(0).toUpperCase() + language.slice(1)}`;
-        
-        try {
-          // Fetch scheduled words (both overdue and upcoming)
-          const scheduledQuery = query(
-            vocabRef,
-            where(nextReviewField, '!=', null),
-            orderBy(nextReviewField),
-            limit(50)
-          );
-          const scheduledSnapshot = await getDocs(scheduledQuery);
-          const scheduledWordsData = scheduledSnapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              simplified: data.simplified,
-              mandarin: data.mandarin,
-              cantonese: data.cantonese,
-              timestamp: data.timestamp,
-              language: data.language,
-              ...data
-            } as VocabEntry;
-          });
-          setScheduledWords(scheduledWordsData);
-
-          // Fetch new words (words without a next review time)
-          const allWordsQuery = query(
-            vocabRef,
-            orderBy('timestamp'),
-            limit(50)
-          );
-          const allWordsSnapshot = await getDocs(allWordsQuery);
-          const newWordsData = allWordsSnapshot.docs
-            .filter(doc => !(nextReviewField in doc.data()))
-            .map(doc => {
-              const data = doc.data();
-              return {
-                id: doc.id,
-                simplified: data.simplified,
-                mandarin: data.mandarin,
-                cantonese: data.cantonese,
-                timestamp: data.timestamp,
-                language: data.language,
-                ...data
-              } as VocabEntry;
-            });
-          setNewWords(newWordsData);
-        } catch (error) {
-          console.error('Error fetching word lists:', error);
-          setMessage('Error fetching word lists');
-        } finally {
-          setIsLoading(false);
-        }
-      };
-
       fetchWordLists();
     }
   }, [showWordList, language, user]);
+
+  // Function to fetch word lists
+  const fetchWordLists = async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    const vocabRef = collection(db, 'vocabulary');
+    const nextReviewField = `nextReview${language.charAt(0).toUpperCase() + language.slice(1)}`;
+    
+    try {
+      const masteredField = `mastered_${language}`;
+
+      // Fetch scheduled words (both overdue and upcoming)
+      const scheduledQuery = query(
+        vocabRef,
+        where(nextReviewField, '!=', null),
+        orderBy(nextReviewField),
+        limit(50)
+      );
+      const scheduledSnapshot = await getDocs(scheduledQuery);
+      const scheduledWordsData = scheduledSnapshot.docs
+        .map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            simplified: data.simplified,
+            mandarin: data.mandarin,
+            cantonese: data.cantonese,
+            timestamp: data.timestamp,
+            language: data.language,
+            ...data
+          } as VocabEntry;
+        })
+        .filter(word => word[masteredField] !== true);
+      setScheduledWords(scheduledWordsData);
+
+      // Fetch mastered words
+      const masteredQuery = query(
+        vocabRef,
+        where(masteredField, '==', true),
+        orderBy('timestamp', 'desc'),
+        limit(50)
+      );
+      const masteredSnapshot = await getDocs(masteredQuery);
+      const masteredWordsData = masteredSnapshot.docs
+        .map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            simplified: data.simplified,
+            mandarin: data.mandarin,
+            cantonese: data.cantonese,
+            timestamp: data.timestamp,
+            language: data.language,
+            ...data
+          } as VocabEntry;
+        });
+      setMasteredWords(masteredWordsData);
+
+      // Fetch new words (words without a next review time)
+      const newWordsQuery = query(
+        vocabRef,
+        orderBy('timestamp'),
+        limit(50)
+      );
+      const newWordsSnapshot = await getDocs(newWordsQuery);
+      const newWordsData = newWordsSnapshot.docs
+        .map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            simplified: data.simplified,
+            mandarin: data.mandarin,
+            cantonese: data.cantonese,
+            timestamp: data.timestamp,
+            language: data.language,
+            ...data
+          } as VocabEntry;
+        })
+        .filter(word => {
+          // Filter for words that don't have nextReviewField and aren't mastered
+          return !(nextReviewField in word) && word[masteredField] !== true;
+        });
+      setNewWords(newWordsData);
+    } catch (error) {
+      console.error('Error fetching word lists:', error);
+      setMessage('Error fetching word lists');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Handle authentication
   useEffect(() => {
@@ -253,71 +280,79 @@ function App() {
     const nextReviewField = `nextReview${language.charAt(0).toUpperCase() + language.slice(1)}`;
     
     try {
+      const masteredField = `mastered_${language}`;
+      
       console.log('Fetching vocabulary...');
       console.log('Current language:', language);
       console.log('Review field:', nextReviewField);
+      console.log('Mastered field:', masteredField);
+      console.log('Current time:', now.toDate().toLocaleString());
 
       // First try to get a word that's due for review
-        const dueQuery = query(
-          vocabRef,
-          where(nextReviewField, '<=', now),
-          orderBy(nextReviewField), // Oldest due words first
-          limit(1)
-        );
-        let snapshot = await getDocs(dueQuery);
-        console.log('Due words query result:', !snapshot.empty);
+      const dueQuery = query(
+        vocabRef,
+        where(nextReviewField, '<=', now),
+        limit(50)
+      );
+      let snapshot = await getDocs(dueQuery);
+      console.log('Due words query result:', !snapshot.empty);
 
-        if (!snapshot.empty) {
-          const doc = snapshot.docs[0];
-          const data = doc.data();
-          console.log('Found due word:', data);
-          setCurrentVocab({
-            id: doc.id,
-            simplified: data.simplified,
-            mandarin: data.mandarin,
-            cantonese: data.cantonese,
-            timestamp: data.timestamp,
-            language: data.language,
-            ...data
-          } as VocabEntry);
-          setMessage('');
-          setIsLoading(false);
-          return;
-        }
+      // Filter out mastered words and take the first non-mastered word
+      const dueWords = snapshot.docs.filter(doc => {
+        const data = doc.data();
+        return data[masteredField] !== true;
+      });
 
-        // If no words are due, try to get any word that hasn't been reviewed in this language
-        const newQuery = query(
-          vocabRef,
-          orderBy('timestamp'), // Oldest first
-          limit(50) // Get a larger batch since we need to filter
-        );
-        snapshot = await getDocs(newQuery);
-        console.log('Fetched words:', snapshot.size);
-        
-        // Find words that don't have the review field for this language
-        const newWords = snapshot.docs.filter(doc => {
-          const data = doc.data();
-          return !(nextReviewField in data);
-        });
-        console.log('New words for', language, ':', newWords.length);
+      if (dueWords.length > 0) {
+        const doc = dueWords[0];
+        const data = doc.data();
+        console.log('Found due word:', data);
+        setCurrentVocab({
+          id: doc.id,
+          simplified: data.simplified,
+          mandarin: data.mandarin,
+          cantonese: data.cantonese,
+          timestamp: data.timestamp,
+          language: data.language,
+          ...data
+        } as VocabEntry);
+        setMessage('');
+        setIsLoading(false);
+        return;
+      }
 
-        if (newWords.length > 0) {
-          const newWord = newWords[0];
-          const data = newWord.data();
-          console.log('Selected new word:', data);
-          setCurrentVocab({
-            id: newWord.id,
-            simplified: data.simplified,
-            mandarin: data.mandarin,
-            cantonese: data.cantonese,
-            timestamp: data.timestamp,
-            language: data.language,
-            ...data
-          } as VocabEntry);
-          setMessage('');
-          setIsLoading(false);
-          return;
-        }
+      // If no words are due, try to get any word that hasn't been reviewed in this language
+      const newQuery = query(
+        vocabRef,
+        limit(50)
+      );
+      snapshot = await getDocs(newQuery);
+      console.log('Fetched words:', snapshot.size);
+      
+      // Find words that don't have the review field and aren't mastered
+      const newWords = snapshot.docs.filter(doc => {
+        const data = doc.data();
+        return !(nextReviewField in data) && data[masteredField] !== true;
+      });
+      console.log('New words for', language, ':', newWords.length);
+
+      if (newWords.length > 0) {
+        const newWord = newWords[0];
+        const data = newWord.data();
+        console.log('Selected new word:', data);
+        setCurrentVocab({
+          id: newWord.id,
+          simplified: data.simplified,
+          mandarin: data.mandarin,
+          cantonese: data.cantonese,
+          timestamp: data.timestamp,
+          language: data.language,
+          ...data
+        } as VocabEntry);
+        setMessage('');
+        setIsLoading(false);
+        return;
+      }
 
         // If no new words and no due words, check when the next review is due
         const nextQuery = query(
@@ -562,6 +597,36 @@ function App() {
             >
               {hadDifficulty ? 'Marked Difficult' : 'Had Difficulty'}
             </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!currentVocab) return;
+                setIsLoading(true);
+                try {
+                  await markWordMastered(currentVocab.id, language);
+                  setMessage('Word marked as mastered');
+                  // Reset states
+                  setUserInput('');
+                  setHadDifficulty(false);
+                  setEvaluation(null);
+                  setNextReview(null);
+                  setSelectedReviewTime(null);
+                  setCurrentVocab(null);
+                  setCurrentQuestion(null);
+                  // Fetch next word
+                  await fetchNextVocab();
+                } catch (error) {
+                  console.error('Error marking word as mastered:', error);
+                  setMessage('Error marking word as mastered');
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              className="bg-green-500 text-white px-6 py-3 rounded-lg shadow hover:bg-green-600 transition-colors disabled:opacity-50"
+              disabled={!currentVocab || isLoading}
+            >
+              Mastered
+            </button>
           </div>
         </form>
 
@@ -570,15 +635,20 @@ function App() {
             <EvaluationResult
               evaluation={evaluation}
               nextReview={nextReview}
-              onUpdateTime={handleUpdateTime}
+              onTimeChange={setSelectedReviewTime}
             />
             <div className="mt-4 flex justify-end">
               <button
-                onClick={() => {
+                onClick={async () => {
+                  // If review time was changed, update it first
+                  if (selectedReviewTime && selectedReviewTime !== nextReview) {
+                    await handleUpdateTime(selectedReviewTime);
+                  }
                   setUserInput('');
                   setHadDifficulty(false);
                   setEvaluation(null);
                   setNextReview(null);
+                  setSelectedReviewTime(null);
                   fetchNextVocab();
                 }}
                 className="bg-green-500 text-white px-6 py-3 rounded-lg shadow hover:bg-green-600 transition-colors"
@@ -602,8 +672,8 @@ function App() {
 
       {/* Word List Modal */}
       {showWordList && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">Word List ({language})</h2>
               <button
@@ -614,11 +684,11 @@ function App() {
               </button>
             </div>
 
-            <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Scheduled Words */}
-              <div>
+              <div className="space-y-3">
                 <h3 className="text-lg font-semibold mb-3">Scheduled Words</h3>
-                <div className="space-y-2">
+                <div className="space-y-2 min-h-[200px]">
                   {scheduledWords.map((word) => {
                     const reviewField = `nextReview${language.charAt(0).toUpperCase() + language.slice(1)}`;
                     const reviewTimestamp = word[reviewField];
@@ -651,9 +721,9 @@ function App() {
               </div>
 
               {/* New Words */}
-              <div>
+              <div className="space-y-3">
                 <h3 className="text-lg font-semibold mb-3">New Words</h3>
-                <div className="space-y-2">
+                <div className="space-y-2 min-h-[200px]">
                   {newWords.map((word) => (
                     <div key={word.id} className="flex items-center p-3 bg-gray-50 rounded">
                       <span className="chinese-text text-lg">{word.simplified}</span>
@@ -661,6 +731,40 @@ function App() {
                   ))}
                   {newWords.length === 0 && (
                     <p className="text-gray-500">No new words</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Mastered Words */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold mb-3">Mastered Words</h3>
+                <div className="space-y-2 min-h-[200px]">
+                  {masteredWords.map((word) => (
+                    <div key={word.id} className="flex justify-between items-center p-3 bg-green-50 rounded">
+                      <span className="chinese-text text-lg">{word.simplified}</span>
+                      <button
+                        onClick={async () => {
+                          setIsLoading(true);
+                          try {
+                            await markWordMastered(word.id, language, false);
+                            // Refresh word lists
+                            await fetchWordLists();
+                          } catch (error) {
+                            console.error('Error unmarking word:', error);
+                            setMessage('Error unmarking word');
+                          } finally {
+                            setIsLoading(false);
+                          }
+                        }}
+                        className="text-red-500 hover:text-red-600 p-2"
+                        title="Unmark as mastered"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  {masteredWords.length === 0 && (
+                    <p className="text-gray-500">No mastered words</p>
                   )}
                 </div>
               </div>

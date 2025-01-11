@@ -30,3 +30,4 @@ dist-ssr
 
 # Firebase config
 src/services/firebase.config.js
+src/services/firebase.config.ts

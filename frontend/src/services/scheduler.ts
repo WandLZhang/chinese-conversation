@@ -2,6 +2,8 @@ import { Language } from '../types';
 
 const EVALUATE_URL = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/evaluate_answer';
 const UPDATE_TIME_URL = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/update_review_time';
+const MARK_MASTERED_URL = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/mark_word_mastered';
+const UNMARK_MASTERED_URL = MARK_MASTERED_URL; // Uses same endpoint with different params
 
 export interface AnswerEvaluation {
   fluent: boolean;
@@ -53,6 +55,31 @@ export async function evaluateAnswer(
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
     throw new Error(`Failed to evaluate answer: ${error.error || response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function markWordMastered(
+  docId: string,
+  language: Language,
+  mastered: boolean = true // Add parameter to control mastered state
+): Promise<{ success: boolean }> {
+  const response = await fetch(MARK_MASTERED_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      docId,
+      language, 
+      mastered,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(`Failed to mark word as mastered: ${error.error || response.statusText}`);
   }
 
   return response.json();
