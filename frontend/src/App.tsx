@@ -13,7 +13,7 @@ function LoadingSpinner() {
     <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-blue-500 inline-block mr-2" />
   );
 }
-
+  
 function EvaluationResult({ 
   evaluation, 
   nextReview, 
@@ -108,6 +108,15 @@ function App() {
   const [scheduledWords, setScheduledWords] = useState<VocabEntry[]>([]);
   const [newWords, setNewWords] = useState<VocabEntry[]>([]);
   const [masteredWords, setMasteredWords] = useState<VocabEntry[]>([]);
+  const [expandedSections, setExpandedSections] = useState<{
+    scheduled: boolean;
+    new: boolean;
+    mastered: boolean;
+  }>({
+    scheduled: false,
+    new: false,
+    mastered: false,
+  });
 
   // Fetch word lists when language changes or modal opens
   useEffect(() => {
@@ -127,28 +136,31 @@ function App() {
     try {
       const masteredField = `mastered_${language}`;
 
-      // Fetch scheduled words (both overdue and upcoming)
+      // Fetch all words with review times
       const scheduledQuery = query(
         vocabRef,
-        where(nextReviewField, '!=', null),
         orderBy(nextReviewField),
         limit(50)
       );
       const scheduledSnapshot = await getDocs(scheduledQuery);
       const scheduledWordsData = scheduledSnapshot.docs
-        .map(doc => {
+        .filter(doc => {
           const data = doc.data();
-          return {
-            id: doc.id,
-            simplified: data.simplified,
-            mandarin: data.mandarin,
-            cantonese: data.cantonese,
-            timestamp: data.timestamp,
-            language: data.language,
-            ...data
-          } as VocabEntry;
+          // Include only words that have a review time and aren't mastered
+          return nextReviewField in data && data[masteredField] !== true;
         })
-        .filter(word => word[masteredField] !== true);
+        .map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          simplified: data.simplified,
+          mandarin: data.mandarin,
+          cantonese: data.cantonese,
+          timestamp: data.timestamp,
+          language: data.language,
+          ...data
+        } as VocabEntry;
+      });
       setScheduledWords(scheduledWordsData);
 
       // Fetch mastered words
@@ -174,7 +186,7 @@ function App() {
         });
       setMasteredWords(masteredWordsData);
 
-      // Fetch new words (words without a next review time)
+      // Fetch all words ordered by timestamp
       const newWordsQuery = query(
         vocabRef,
         orderBy('timestamp'),
@@ -182,22 +194,23 @@ function App() {
       );
       const newWordsSnapshot = await getDocs(newWordsQuery);
       const newWordsData = newWordsSnapshot.docs
-        .map(doc => {
+        .filter(doc => {
           const data = doc.data();
-          return {
-            id: doc.id,
-            simplified: data.simplified,
-            mandarin: data.mandarin,
-            cantonese: data.cantonese,
-            timestamp: data.timestamp,
-            language: data.language,
-            ...data
-          } as VocabEntry;
+          // Include only words that don't have a review time and aren't mastered
+          return !(nextReviewField in data) && data[masteredField] !== true;
         })
-        .filter(word => {
-          // Filter for words that don't have nextReviewField and aren't mastered
-          return !(nextReviewField in word) && word[masteredField] !== true;
-        });
+        .map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          simplified: data.simplified,
+          mandarin: data.mandarin,
+          cantonese: data.cantonese,
+          timestamp: data.timestamp,
+          language: data.language,
+          ...data
+        } as VocabEntry;
+      });
       setNewWords(newWordsData);
     } catch (error) {
       console.error('Error fetching word lists:', error);
@@ -297,7 +310,7 @@ function App() {
       let snapshot = await getDocs(dueQuery);
       console.log('Due words query result:', !snapshot.empty);
 
-      // Filter out mastered words and take the first non-mastered word
+      // Filter out mastered words
       const dueWords = snapshot.docs.filter(doc => {
         const data = doc.data();
         return data[masteredField] !== true;
@@ -324,12 +337,13 @@ function App() {
       // If no words are due, try to get any word that hasn't been reviewed in this language
       const newQuery = query(
         vocabRef,
+        orderBy('timestamp'),
         limit(50)
       );
       snapshot = await getDocs(newQuery);
       console.log('Fetched words:', snapshot.size);
       
-      // Find words that don't have the review field and aren't mastered
+      // Find words that don't have a review time and aren't mastered
       const newWords = snapshot.docs.filter(doc => {
         const data = doc.data();
         return !(nextReviewField in data) && data[masteredField] !== true;
@@ -358,14 +372,20 @@ function App() {
         const nextQuery = query(
           vocabRef,
           where(nextReviewField, '>', now),
-          orderBy(nextReviewField), // Get the soonest due word
+          orderBy(nextReviewField),
           limit(1)
         );
         const nextSnapshot = await getDocs(nextQuery);
         console.log('Next review query result:', !nextSnapshot.empty);
         
-        if (!nextSnapshot.empty) {
-          const doc = nextSnapshot.docs[0];
+        // Filter out mastered words
+        const nextWords = nextSnapshot.docs.filter(doc => {
+          const data = doc.data();
+          return data[masteredField] !== true;
+        });
+        
+        if (nextWords.length > 0) {
+          const doc = nextWords[0];
           const data = doc.data();
           console.log('Found next scheduled word:', data);
           const nextReviewTime = data[nextReviewField] as Timestamp;
@@ -622,7 +642,7 @@ function App() {
                   setIsLoading(false);
                 }
               }}
-              className="bg-green-500 text-white px-6 py-3 rounded-lg shadow hover:bg-green-600 transition-colors disabled:opacity-50"
+              className="bg-green-600 text-white px-4 py-3 rounded-lg shadow hover:bg-green-700 transition-colors disabled:opacity-50"
               disabled={!currentVocab || isLoading}
             >
               Mastered
@@ -688,8 +708,8 @@ function App() {
               {/* Scheduled Words */}
               <div className="space-y-3">
                 <h3 className="text-lg font-semibold mb-3">Scheduled Words</h3>
-                <div className="space-y-2 min-h-[200px]">
-                  {scheduledWords.map((word) => {
+                <div className="space-y-2">
+                  {scheduledWords.slice(0, expandedSections.scheduled ? undefined : 5).map((word) => {
                     const reviewField = `nextReview${language.charAt(0).toUpperCase() + language.slice(1)}`;
                     const reviewTimestamp = word[reviewField];
                     const reviewTime = reviewTimestamp?.toDate();
@@ -708,14 +728,51 @@ function App() {
                             <span className="text-red-500 text-sm font-medium">Overdue</span>
                           )}
                         </div>
-                        <span className={`${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
-                          {reviewTime ? reviewTime.toLocaleString() : 'No review time set'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
+                            {reviewTime ? reviewTime.toLocaleString() : 'No review time set'}
+                          </span>
+                          {!reviewTime && (
+                            <button
+                              onClick={async () => {
+                                setIsLoading(true);
+                                try {
+                                  // Set an initial review time for 5 minutes from now
+                                  const date = new Date();
+                                  date.setMinutes(date.getMinutes() + 5);
+                                  const isoString = date.toISOString().split('.')[0];
+                                  await updateReviewTime(word.id, language, isoString);
+                                  // Refresh word lists
+                                  await fetchWordLists();
+                                } catch (error) {
+                                  console.error('Error setting review time:', error);
+                                  setMessage('Error setting review time');
+                                } finally {
+                                  setIsLoading(false);
+                                }
+                              }}
+                              className="text-blue-500 hover:text-blue-600 p-2"
+                              title="Set review time"
+                            >
+                              Schedule
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
-                  {scheduledWords.length === 0 && (
+                  {scheduledWords.length === 0 ? (
                     <p className="text-gray-500">No scheduled words</p>
+                  ) : scheduledWords.length > 5 && (
+                    <button
+                      onClick={() => setExpandedSections(prev => ({
+                        ...prev,
+                        scheduled: !prev.scheduled
+                      }))}
+                      className="w-full mt-2 text-blue-500 hover:text-blue-600 text-sm font-medium"
+                    >
+                      {expandedSections.scheduled ? 'Show Less' : `See ${scheduledWords.length - 5} More`}
+                    </button>
                   )}
                 </div>
               </div>
@@ -723,14 +780,47 @@ function App() {
               {/* New Words */}
               <div className="space-y-3">
                 <h3 className="text-lg font-semibold mb-3">New Words</h3>
-                <div className="space-y-2 min-h-[200px]">
-                  {newWords.map((word) => (
-                    <div key={word.id} className="flex items-center p-3 bg-gray-50 rounded">
+                <div className="space-y-2">
+                  {newWords.slice(0, expandedSections.new ? undefined : 5).map((word) => (
+                    <div key={word.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
                       <span className="chinese-text text-lg">{word.simplified}</span>
+                      <button
+                        onClick={async () => {
+                          setIsLoading(true);
+                          try {
+                            // Set an initial review time for 5 minutes from now
+                            const date = new Date();
+                            date.setMinutes(date.getMinutes() + 5);
+                            const isoString = date.toISOString().split('.')[0];
+                            await updateReviewTime(word.id, language, isoString);
+                            // Refresh word lists
+                            await fetchWordLists();
+                          } catch (error) {
+                            console.error('Error setting review time:', error);
+                            setMessage('Error setting review time');
+                          } finally {
+                            setIsLoading(false);
+                          }
+                        }}
+                        className="text-blue-500 hover:text-blue-600 p-2"
+                        title="Set review time"
+                      >
+                        Schedule
+                      </button>
                     </div>
                   ))}
-                  {newWords.length === 0 && (
+                  {newWords.length === 0 ? (
                     <p className="text-gray-500">No new words</p>
+                  ) : newWords.length > 5 && (
+                    <button
+                      onClick={() => setExpandedSections(prev => ({
+                        ...prev,
+                        new: !prev.new
+                      }))}
+                      className="w-full mt-2 text-blue-500 hover:text-blue-600 text-sm font-medium"
+                    >
+                      {expandedSections.new ? 'Show Less' : `See ${newWords.length - 5} More`}
+                    </button>
                   )}
                 </div>
               </div>
@@ -738,8 +828,8 @@ function App() {
               {/* Mastered Words */}
               <div className="space-y-3">
                 <h3 className="text-lg font-semibold mb-3">Mastered Words</h3>
-                <div className="space-y-2 min-h-[200px]">
-                  {masteredWords.map((word) => (
+                <div className="space-y-2">
+                  {masteredWords.slice(0, expandedSections.mastered ? undefined : 5).map((word) => (
                     <div key={word.id} className="flex justify-between items-center p-3 bg-green-50 rounded">
                       <span className="chinese-text text-lg">{word.simplified}</span>
                       <button
@@ -747,6 +837,11 @@ function App() {
                           setIsLoading(true);
                           try {
                             await markWordMastered(word.id, language, false);
+                            // Set an initial review time for 5 minutes from now
+                            const date = new Date();
+                            date.setMinutes(date.getMinutes() + 5);
+                            const isoString = date.toISOString().split('.')[0];
+                            await updateReviewTime(word.id, language, isoString);
                             // Refresh word lists
                             await fetchWordLists();
                           } catch (error) {
@@ -763,8 +858,18 @@ function App() {
                       </button>
                     </div>
                   ))}
-                  {masteredWords.length === 0 && (
+                  {masteredWords.length === 0 ? (
                     <p className="text-gray-500">No mastered words</p>
+                  ) : masteredWords.length > 5 && (
+                    <button
+                      onClick={() => setExpandedSections(prev => ({
+                        ...prev,
+                        mastered: !prev.mastered
+                      }))}
+                      className="w-full mt-2 text-blue-500 hover:text-blue-600 text-sm font-medium"
+                    >
+                      {expandedSections.mastered ? 'Show Less' : `See ${masteredWords.length - 5} More`}
+                    </button>
                   )}
                 </div>
               </div>
