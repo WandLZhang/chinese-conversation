@@ -4,12 +4,16 @@ import { httpsCallable } from 'firebase/functions';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 
 const FUNCTION_URL = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/generate_vocab_question';
+const AUDIO_FUNCTION_URL = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/generate_audio_live';
 
 export interface QuestionResponse {
   question: string;
-  audio: string;  // base64 encoded audio
-  requires_alternative: boolean;  // NEW: whether colloquial alternative was used
-  target_word: string;  // NEW: the actual word used in the question
+  requires_alternative: boolean;
+  target_word: string;
+}
+
+export interface AudioResponse {
+  audio: string;  // base64 encoded WAV audio
 }
 
 export interface Question {
@@ -42,8 +46,35 @@ export async function generateQuestion(
   return response.json();
 }
 
+export async function generateAudio(
+  sentence: string,
+  language: Language
+): Promise<AudioResponse> {
+  console.log('Generating audio for:', sentence, 'in', language);
+  
+  const response = await fetch(AUDIO_FUNCTION_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      sentence,
+      language,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to generate audio: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  console.log('Audio generated, size:', data.audio?.length || 0, 'chars');
+  return data;
+}
+
 export function playAudio(base64Audio: string) {
-  const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
+  // WAV audio from Gemini Live API
+  const audio = new Audio(`data:audio/wav;base64,${base64Audio}`);
   return audio.play();
 }
 

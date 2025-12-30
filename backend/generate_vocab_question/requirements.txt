@@ -1,6 +1,5 @@
 functions-framework==3.*
 google-cloud-aiplatform==1.69.0
-google-cloud-texttospeech==2.15.0
 anthropic[vertex]
 flask==3.0.2
 opencc-python-reimplemented==0.1.7

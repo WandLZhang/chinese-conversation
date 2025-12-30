@@ -30,11 +30,12 @@ export interface VocabEntry {
 
 export interface QuestionData {
   question: string;
-  audio: string;  // base64 encoded audio
+  audio?: string;  // base64 encoded audio (optional - generated separately via Gemini Live API)
   word: string;
   language: Language;
-  requires_alternative: boolean;  // NEW: whether colloquial alternative was used
-  target_word: string;  // NEW: the actual word used in the question
+  requires_alternative: boolean;
+  target_word: string;
+  audioLoading?: boolean;  // Indicates audio is being generated
 }
 
 export interface Evaluation {

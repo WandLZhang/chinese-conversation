@@ -4,8 +4,6 @@ from vertexai.preview import rag
 from vertexai.preview.generative_models import GenerativeModel, SafetySetting
 import vertexai
 from anthropic import AnthropicVertex
-from google.cloud import texttospeech
-import base64
 import logging
 import re
 import opencc
@@ -24,9 +22,6 @@ client = AnthropicVertex(
     project_id=PROJECT_ID
 )
 
-# Initialize Text-to-Speech client
-tts_client = texttospeech.TextToSpeechClient()
-
 # Initialize Chinese converter (Simplified to Traditional)
 converter = opencc.OpenCC('s2t')
 
@@ -39,45 +34,6 @@ def check_cantonese_usage(vocab_word: str, cantonese_entry: str) -> bool:
     result = traditional_word in cantonese_entry
     logger.info(f"check_cantonese_usage: vocab_word={vocab_word}, traditional={traditional_word}, found_in_entry={result}")
     return result
-
-def get_audio_content(text: str, language: str) -> str:
-    """Generate audio content for the given text and return as base64."""
-    # Configure voice based on language
-    if language == 'cantonese':
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="yue-HK",
-            name="yue-HK-Standard-B"
-        )
-    else:
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="cmn-CN",
-            name="cmn-CN-Wavenet-A"  # Using Wavenet voice for better quality
-        )
-
-    # Configure audio
-    audio_config = texttospeech.AudioConfig(
-        audio_encoding=texttospeech.AudioEncoding.LINEAR16,
-        effects_profile_id=["small-bluetooth-speaker-class-device"],
-        speaking_rate=1.0,
-        pitch=0 if language == 'mandarin' else -1.2  # Default pitch for Mandarin, slightly lower for Cantonese
-    )
-
-    # Build synthesis input
-    synthesis_input = texttospeech.SynthesisInput(text=text)
-
-    try:
-        # Perform text-to-speech request
-        response = tts_client.synthesize_speech(
-            input=synthesis_input,
-            voice=voice,
-            audio_config=audio_config
-        )
-
-        # Return base64 encoded audio content
-        return base64.b64encode(response.audio_content).decode('utf-8')
-    except Exception as e:
-        logger.error(f"Error generating audio: {e}")
-        return None
 
 def initialize_vertexai():
     try:
@@ -360,17 +316,11 @@ def generate_vocab_question(request):
         if language == 'cantonese' and requires_alternative:
             target_word = extract_target_word_from_question(question, vocabulary_word)
             logger.info(f"Extracted target_word: {target_word}")
-        
-        # Generate audio for the question
-        audio_content = get_audio_content(question, language)
-        if not audio_content:
-            return (jsonify({'error': 'Failed to generate audio'}), 500, headers)
 
         response_data = {
             'question': question,
-            'audio': audio_content,
-            'requires_alternative': requires_alternative,  # NEW: Tell frontend/evaluate if alternative was used
-            'target_word': target_word  # NEW: The actual word used in the question
+            'requires_alternative': requires_alternative,
+            'target_word': target_word
         }
         
         logger.info(f"\n=== Response ===")

@@ -4,7 +4,7 @@ import { User } from 'firebase/auth';
 import { db } from './services/firebase';
 import { signIn, onAuthChange } from './services/auth';
 import { evaluateAnswer, updateReviewTime, markWordMastered, type AnswerEvaluation } from './services/scheduler';
-import { generateQuestion, playAudio } from './services/questions';
+import { generateQuestion, generateAudio, playAudio } from './services/questions';
 import { VocabEntry, Language, QuestionData } from './types';
 import { SpeakerWaveIcon } from '@heroicons/react/24/solid';
 
@@ -272,13 +272,35 @@ function App() {
           console.log('Question response:', response);
           // Only set the question if the component is still mounted
           if (mounted) {
-            setCurrentQuestion({
+            const questionData: QuestionData = {
               ...response,
               word: currentVocab.simplified,
               language,
               requires_alternative: response.requires_alternative || false,
-              target_word: response.target_word || currentVocab.simplified
-            });
+              target_word: response.target_word || currentVocab.simplified,
+              audioLoading: true  // Start with audio loading
+            };
+            setCurrentQuestion(questionData);
+            
+            // Pre-generate audio in background
+            console.log('Pre-generating audio for question:', response.question);
+            generateAudio(response.question, language)
+              .then(audioResponse => {
+                if (mounted) {
+                  console.log('Audio pre-generated successfully');
+                  setCurrentQuestion(prev => prev ? { 
+                    ...prev, 
+                    audio: audioResponse.audio,
+                    audioLoading: false 
+                  } : null);
+                }
+              })
+              .catch(err => {
+                console.error('Error pre-generating audio:', err);
+                if (mounted) {
+                  setCurrentQuestion(prev => prev ? { ...prev, audioLoading: false } : null);
+                }
+              });
           } else {
             console.log('Component unmounted, discarding generated question');
           }
@@ -591,11 +613,45 @@ function App() {
                     {currentQuestion.question}
                   </div>
                   <button
-                    onClick={() => currentQuestion.audio && playAudio(currentQuestion.audio)}
-                    className="p-2 text-blue-500 hover:text-blue-600 transition-colors"
-                    title="Play audio"
+                    onClick={async () => {
+                      if (!currentQuestion) return;
+                      
+                      // If audio already exists, just play it
+                      if (currentQuestion.audio) {
+                        playAudio(currentQuestion.audio);
+                        return;
+                      }
+                      
+                      // Generate audio on demand
+                      try {
+                        setCurrentQuestion(prev => prev ? { ...prev, audioLoading: true } : null);
+                        const audioResponse = await generateAudio(currentQuestion.question, language);
+                        setCurrentQuestion(prev => prev ? { 
+                          ...prev, 
+                          audio: audioResponse.audio, 
+                          audioLoading: false 
+                        } : null);
+                        // Auto-play after generation
+                        playAudio(audioResponse.audio);
+                      } catch (error) {
+                        console.error('Error generating audio:', error);
+                        setCurrentQuestion(prev => prev ? { ...prev, audioLoading: false } : null);
+                        setMessage('Error generating audio');
+                      }
+                    }}
+                    className={`p-2 transition-colors ${
+                      currentQuestion.audioLoading 
+                        ? 'text-gray-400 cursor-wait' 
+                        : 'text-blue-500 hover:text-blue-600'
+                    }`}
+                    title={currentQuestion.audioLoading ? 'Generating audio...' : 'Play audio'}
+                    disabled={currentQuestion.audioLoading}
                   >
-                    <SpeakerWaveIcon className="h-6 w-6" />
+                    {currentQuestion.audioLoading ? (
+                      <LoadingSpinner />
+                    ) : (
+                      <SpeakerWaveIcon className="h-6 w-6" />
+                    )}
                   </button>
                 </>
               ) : (
