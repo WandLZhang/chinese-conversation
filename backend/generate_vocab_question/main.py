@@ -19,7 +19,7 @@ LOCATION = "us-central1"
 
 # Initialize AnthropicVertex client
 client = AnthropicVertex(
-    region="us-east5",
+    region="global",
     project_id=PROJECT_ID
 )
 
@@ -179,7 +179,7 @@ def generate_cantonese_question(vocabulary_word):
 
     try:
         response = client.messages.create(
-            model="claude-3-5-sonnet-v2@20241022",
+            model="claude-sonnet-4-5@20250929",
             max_tokens=100,
             temperature=0.7,
             messages=[
@@ -210,7 +210,7 @@ def generate_mandarin_question(vocabulary_word):
 
     try:
         response = client.messages.create(
-            model="claude-3-5-sonnet-v2@20241022",
+            model="claude-sonnet-4-5@20250929",
             max_tokens=100,
             temperature=0.7,
             messages=[

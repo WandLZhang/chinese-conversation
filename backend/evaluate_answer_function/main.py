@@ -22,7 +22,7 @@ def serialize_firestore(obj):
 # Initialize clients
 db = firestore.Client()
 client = AnthropicVertex(
-    region="us-east5",
+    region="global",
     project_id=os.getenv('PROJECT_ID')
 )
 
@@ -56,7 +56,7 @@ def extract_cantonese_word(question: str, vocab_word: str) -> str:
         Return ONLY the identified Cantonese characters, nothing else."""
         
         response = client.messages.create(
-            model="claude-3-5-sonnet-v2@20241022",
+            model="claude-sonnet-4-5@20250929",
             max_tokens=100,
             temperature=0,
             messages=[{
@@ -142,11 +142,12 @@ def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str
       "has_fillers": boolean,     // true if English words or unnecessary romanization used
       "romanization": string,     // pinyin for Mandarin or jyutping for Cantonese, with tones
       "improved_answer": string,  // better version that MUST use the vocabulary word (or for Cantonese: the same word used in the question)
-      "feedback": string         // detailed explanation of evaluation and suggestions
+      "feedback": string         // detailed explanation of evaluation and suggestions IN ENGLISH
     }}
 
     IMPORTANT: Ensure your response is ONLY the JSON object, with no additional text or explanation.
     Use double quotes for strings and proper JSON syntax.
+    CRITICAL: The "feedback" field MUST be written in English, even when evaluating Cantonese or Mandarin answers.
 
     The feedback should be constructive and specific, explaining:
     1. How well the answer addresses the question
@@ -168,7 +169,7 @@ def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str
     try:
         print("\n=== Sending Request to Claude ===")
         response = client.messages.create(
-            model="claude-3-5-sonnet-v2@20241022",
+            model="claude-sonnet-4-5@20250929",
             max_tokens=1000,
             temperature=0,
             messages=[{
@@ -188,9 +189,16 @@ Please evaluate this answer."""
         raw_response = response.content[0].text
         print(f"Raw Response: {raw_response}")
 
-        # Parse the JSON response
+        # Parse the JSON response - strip markdown code blocks if present
         try:
-            evaluation = json.loads(raw_response)
+            json_text = raw_response.strip()
+            if json_text.startswith('```'):
+                # Remove markdown code block markers
+                lines = json_text.split('\n')
+                # Remove first line (```json or ```) and last line (```)
+                lines = [l for l in lines if not l.strip().startswith('```')]
+                json_text = '\n'.join(lines)
+            evaluation = json.loads(json_text)
             print("\n=== Parsed Evaluation ===")
             print(json.dumps(evaluation, indent=2))
             return evaluation

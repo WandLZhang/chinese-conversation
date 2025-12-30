@@ -255,8 +255,6 @@ function App() {
               word: currentVocab.simplified,
               language
             });
-            // Automatically play the audio when it's loaded
-            playAudio(response.audio).catch(console.error);
           } else {
             console.log('Component unmounted, discarding generated question');
           }
