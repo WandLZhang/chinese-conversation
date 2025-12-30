@@ -33,6 +33,8 @@ export interface QuestionData {
   audio: string;  // base64 encoded audio
   word: string;
   language: Language;
+  requires_alternative: boolean;  // NEW: whether colloquial alternative was used
+  target_word: string;  // NEW: the actual word used in the question
 }
 
 export interface Evaluation {

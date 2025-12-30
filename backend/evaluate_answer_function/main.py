@@ -77,27 +77,35 @@ def extract_cantonese_word(question: str, vocab_word: str) -> str:
         print(f"Error extracting Cantonese word: {str(e)}")
         return vocab_word  # Fallback to original word if extraction fails
 
-def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str, vocab_entry: dict, generated_question: str = None) -> dict:
-    """Use Claude to evaluate the answer and provide feedback"""
+def evaluate_answer_with_claude(user_answer: str, vocab_word: str, language: str, vocab_entry: dict, generated_question: str = None, requires_alternative: bool = False, target_word: str = None) -> dict:
+    """Use Claude to evaluate the answer and provide feedback
+    
+    Args:
+        requires_alternative: Passed from generate_vocab_question - whether colloquial alternative was used
+        target_word: Passed from generate_vocab_question - the actual word used in the question
+    """
     
     print(f"\n=== Evaluation Request ===")
     print(f"Language: {language}")
     print(f"Vocabulary Word: {vocab_word}")
     print(f"User Answer: {user_answer}")
+    print(f"Requires Alternative (from generate_vocab_question): {requires_alternative}")
+    print(f"Target Word (from generate_vocab_question): {target_word}")
     
-    # Check if word appears in Cantonese entry
-    requires_alternative = False
-    target_word = vocab_word
-    if language == 'cantonese':
-        cantonese_entry = vocab_entry.get('cantonese', '')
-        requires_alternative = not check_cantonese_usage(vocab_word, cantonese_entry)
-        print(f"Cantonese Entry: {cantonese_entry}")
-        print(f"Requires Alternative: {requires_alternative}")
-        
-        # If alternative is required and we have a generated question, extract the Cantonese word used
-        if requires_alternative and generated_question:
-            target_word = extract_cantonese_word(generated_question, vocab_word)
-            print(f"Using Cantonese alternative: {target_word}")
+    # Use passed values instead of recalculating
+    # Only fall back to recalculating if values weren't passed
+    if target_word is None:
+        target_word = vocab_word
+        if language == 'cantonese':
+            cantonese_entry = vocab_entry.get('cantonese', '')
+            requires_alternative = not check_cantonese_usage(vocab_word, cantonese_entry)
+            print(f"Cantonese Entry: {cantonese_entry}")
+            print(f"Requires Alternative (recalculated): {requires_alternative}")
+            
+            # If alternative is required and we have a generated question, extract the Cantonese word used
+            if requires_alternative and generated_question:
+                target_word = extract_cantonese_word(generated_question, vocab_word)
+                print(f"Using Cantonese alternative (extracted): {target_word}")
     
     # Use generated question if provided, otherwise fall back to entry
     question = generated_question if generated_question else vocab_entry.get(language.lower(), '')
@@ -301,8 +309,14 @@ def evaluate_answer(request):
                 vocab_data[field] = vocab_data[field].isoformat() if hasattr(vocab_data[field], 'isoformat') else None
         print(f"Vocabulary Data: {json.dumps(vocab_data, indent=2)}")
         
-        # Get the generated question from the request
+        # Get the generated question and new parameters from the request
         generated_question = request_json.get('generatedQuestion')
+        requires_alternative = request_json.get('requiresAlternative', False)  # NEW: from generate_vocab_question
+        target_word = request_json.get('targetWord')  # NEW: from generate_vocab_question
+        
+        print(f"\n=== Values from generate_vocab_question ===")
+        print(f"requiresAlternative: {requires_alternative}")
+        print(f"targetWord: {target_word}")
         
         # Evaluate the answer
         evaluation = evaluate_answer_with_claude(
@@ -310,7 +324,9 @@ def evaluate_answer(request):
             vocab_data['simplified'],
             language,
             vocab_data,
-            generated_question
+            generated_question,
+            requires_alternative,  # NEW: pass through
+            target_word  # NEW: pass through
         )
         
         # Calculate next review time

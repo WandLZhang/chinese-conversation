@@ -36,7 +36,9 @@ export async function evaluateAnswer(
   language: Language,
   answer: string,
   hadDifficulty: boolean = false,
-  generatedQuestion?: string
+  generatedQuestion?: string,
+  requiresAlternative?: boolean,  // NEW: Pass from generate_vocab_question
+  targetWord?: string  // NEW: The actual word used in the question
 ): Promise<{ evaluation: AnswerEvaluation; nextReview: { seconds: number; nanoseconds: number } }> {
   const response = await fetch(EVALUATE_URL, {
     method: 'POST',
@@ -48,7 +50,9 @@ export async function evaluateAnswer(
       language,
       answer,
       hadDifficulty,
-      generatedQuestion
+      generatedQuestion,
+      requiresAlternative,  // NEW: Pass to backend
+      targetWord  // NEW: Pass to backend
     }),
   });
 

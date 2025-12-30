@@ -247,13 +247,19 @@ function App() {
         setCurrentQuestion(null);
         try {
           console.log('Generating question for:', currentVocab.simplified, 'in', language);
-          const response = await generateQuestion(currentVocab.simplified, language);
+          // Pass the cantonese entry from Firestore for alternative word detection
+          const cantoneseEntry = language === 'cantonese' ? currentVocab.cantonese : undefined;
+          console.log('Cantonese entry from Firestore:', cantoneseEntry);
+          const response = await generateQuestion(currentVocab.simplified, language, cantoneseEntry);
+          console.log('Question response:', response);
           // Only set the question if the component is still mounted
           if (mounted) {
             setCurrentQuestion({
               ...response,
               word: currentVocab.simplified,
-              language
+              language,
+              requires_alternative: response.requires_alternative || false,
+              target_word: response.target_word || currentVocab.simplified
             });
           } else {
             console.log('Component unmounted, discarding generated question');
@@ -431,7 +437,9 @@ function App() {
         language,
         userInput,
         hadDifficulty,
-        currentQuestion.question
+        currentQuestion.question,
+        currentQuestion.requires_alternative,  // Pass from generate_vocab_question
+        currentQuestion.target_word  // Pass the actual word used in the question
       );
       
       // Convert raw timestamp data to Firestore Timestamp

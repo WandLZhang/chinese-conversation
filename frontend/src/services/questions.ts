@@ -8,6 +8,8 @@ const FUNCTION_URL = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.ne
 export interface QuestionResponse {
   question: string;
   audio: string;  // base64 encoded audio
+  requires_alternative: boolean;  // NEW: whether colloquial alternative was used
+  target_word: string;  // NEW: the actual word used in the question
 }
 
 export interface Question {
@@ -16,7 +18,11 @@ export interface Question {
   language: Language;
 }
 
-export async function generateQuestion(word: string, language: Language): Promise<QuestionResponse> {
+export async function generateQuestion(
+  word: string, 
+  language: Language, 
+  cantoneseEntry?: string  // NEW: Pass Firestore cantonese field for alternative detection
+): Promise<QuestionResponse> {
   const response = await fetch(FUNCTION_URL, {
     method: 'POST',
     headers: {
@@ -25,6 +31,7 @@ export async function generateQuestion(word: string, language: Language): Promis
     body: JSON.stringify({
       word,
       language,
+      cantoneseEntry: cantoneseEntry || '',  // Pass the cantonese example sentence
     }),
   });
 
