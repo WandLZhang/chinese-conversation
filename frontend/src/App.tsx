@@ -118,6 +118,24 @@ function App() {
     mastered: false,
   });
 
+  // Handler for selecting a word from the word list
+  const handleWordSelect = (word: VocabEntry) => {
+    // Clear previous states
+    setUserInput('');
+    setHadDifficulty(false);
+    setEvaluation(null);
+    setNextReview(null);
+    setSelectedReviewTime(null);
+    setCurrentQuestion(null);
+    setMessage('');
+    
+    // Set the selected word as current vocab (this triggers question generation via useEffect)
+    setCurrentVocab(word);
+    
+    // Close the word list modal
+    setShowWordList(false);
+  };
+
   // Fetch word lists when language changes or modal opens
   useEffect(() => {
     if (showWordList && user) {
@@ -729,7 +747,13 @@ function App() {
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <span className="chinese-text text-lg">{word.simplified}</span>
+                          <span 
+                            className="chinese-text text-lg cursor-pointer hover:text-blue-600 transition-colors"
+                            onClick={() => handleWordSelect(word)}
+                            title="Click to practice this word"
+                          >
+                            {word.simplified}
+                          </span>
                           {isOverdue && (
                             <span className="text-red-500 text-sm font-medium">Overdue</span>
                           )}
@@ -789,7 +813,13 @@ function App() {
                 <div className="space-y-2">
                   {newWords.slice(0, expandedSections.new ? undefined : 5).map((word) => (
                     <div key={word.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                      <span className="chinese-text text-lg">{word.simplified}</span>
+                      <span 
+                        className="chinese-text text-lg cursor-pointer hover:text-blue-600 transition-colors"
+                        onClick={() => handleWordSelect(word)}
+                        title="Click to practice this word"
+                      >
+                        {word.simplified}
+                      </span>
                       <button
                         onClick={async () => {
                           setIsLoading(true);
@@ -837,7 +867,13 @@ function App() {
                 <div className="space-y-2">
                   {masteredWords.slice(0, expandedSections.mastered ? undefined : 5).map((word) => (
                     <div key={word.id} className="flex justify-between items-center p-3 bg-green-50 rounded">
-                      <span className="chinese-text text-lg">{word.simplified}</span>
+                      <span 
+                        className="chinese-text text-lg cursor-pointer hover:text-blue-600 transition-colors"
+                        onClick={() => handleWordSelect(word)}
+                        title="Click to practice this word"
+                      >
+                        {word.simplified}
+                      </span>
                       <button
                         onClick={async () => {
                           setIsLoading(true);
