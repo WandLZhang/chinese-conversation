@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, getDocs, Timestamp, where } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, Timestamp, where, getCountFromServer } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db } from './services/firebase';
 import { signIn, onAuthChange } from './services/auth';
@@ -7,6 +7,7 @@ import { evaluateAnswer, updateReviewTime, markWordMastered, type AnswerEvaluati
 import { generateQuestion, generateAudio, playAudio } from './services/questions';
 import { VocabEntry, Language, QuestionData } from './types';
 import { SpeakerWaveIcon } from '@heroicons/react/24/solid';
+import ShuffleIcon from '@mui/icons-material/Shuffle';
 
 function LoadingSpinner() {
   return (
@@ -134,6 +135,89 @@ function App() {
     
     // Close the word list modal
     setShowWordList(false);
+  };
+
+  // Fetch a random vocabulary word from the entire collection
+  const fetchRandomVocab = async () => {
+    if (!user) {
+      setMessage("Please sign in to continue");
+      return;
+    }
+
+    setIsLoading(true);
+    setEvaluation(null);
+    setNextReview(null);
+    setCurrentQuestion(null);
+    setMessage('');
+    
+    const vocabRef = collection(db, 'vocabulary');
+    
+    try {
+      console.log('Fetching random vocabulary word...');
+      
+      // Get total count of documents
+      const countSnapshot = await getCountFromServer(vocabRef);
+      const totalCount = countSnapshot.data().count;
+      console.log('Total vocabulary count:', totalCount);
+      
+      if (totalCount === 0) {
+        setMessage('No vocabulary available');
+        setCurrentVocab(null);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Generate a random offset
+      const randomOffset = Math.floor(Math.random() * totalCount);
+      console.log('Random offset:', randomOffset);
+      
+      // Fetch documents with timestamp ordering and use limit/offset approach
+      // Since Firestore doesn't have native offset, we fetch in batches
+      // For efficiency, we'll fetch a batch and pick randomly from it
+      const batchSize = Math.min(100, totalCount);
+      const randomBatchStart = Math.floor(Math.random() * Math.max(1, totalCount - batchSize + 1));
+      
+      // Query ordered by timestamp
+      const randomQuery = query(
+        vocabRef,
+        orderBy('timestamp'),
+        limit(batchSize)
+      );
+      
+      const snapshot = await getDocs(randomQuery);
+      
+      if (snapshot.empty) {
+        setMessage('No vocabulary available');
+        setCurrentVocab(null);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Pick a random document from the batch
+      const randomIndex = Math.floor(Math.random() * snapshot.docs.length);
+      const randomDoc = snapshot.docs[randomIndex];
+      const data = randomDoc.data();
+      
+      console.log('Selected random word:', data.simplified);
+      
+      const randomWord: VocabEntry = {
+        id: randomDoc.id,
+        simplified: data.simplified,
+        mandarin: data.mandarin,
+        cantonese: data.cantonese,
+        timestamp: data.timestamp,
+        language: data.language,
+        ...data
+      };
+      
+      setCurrentVocab(randomWord);
+      setMessage('');
+    } catch (error) {
+      console.error('Error fetching random vocabulary:', error);
+      setMessage('Error fetching random vocabulary');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Fetch word lists when language changes or modal opens
@@ -559,7 +643,7 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       {/* Language Selection */}
-      <div className="mb-8 flex justify-center gap-4">
+      <div className="mb-4 flex justify-center gap-4">
         <button
           onClick={() => setLanguage('mandarin')}
           className={`px-6 py-3 rounded-lg shadow transition-colors ${
@@ -581,6 +665,18 @@ function App() {
           disabled={isLoading}
         >
           Cantonese
+        </button>
+      </div>
+
+      {/* Random Word Button */}
+      <div className="mb-6 flex justify-center">
+        <button
+          onClick={() => fetchRandomVocab()}
+          className="p-2 rounded-full transition-colors bg-purple-100 text-purple-400 hover:bg-purple-200 hover:text-purple-500 disabled:opacity-50"
+          disabled={isLoading}
+          title="Get a random word from the vocabulary"
+        >
+          <ShuffleIcon sx={{ fontSize: 20 }} />
         </button>
       </div>
 
